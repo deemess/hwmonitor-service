@@ -23,6 +23,9 @@ namespace hwmonitor
         private SerialPort _serialPort;
         private Computer _computer;
         
+        public Thread Thread { get { return _workerThread; } }
+        public Computer Computer { get { return _computer; } }
+
         // Configuration properties
         private string ComPort { get; set; }
         private int BaudRate { get; set; }
@@ -31,10 +34,34 @@ namespace hwmonitor
         private StopBits StopBits { get; set; }
         private int MonitoringInterval { get; set; }
 
+        public String CpuTxt { get; set; }
+        public String CpuTxtEnd { get; set; }
+        public String SensorIdCpu { get; set; }
+        public String SensorIdCpuTemp { get; set; }
+        public String MemTxt { get; set; }
+        public String MemTxtEnd { get; set; }
+        public String SensorIdMem { get; set; }
+        public String SensorIdMemValue { get; set; }
+        public String Gpu1Txt { get; set; }
+        public String Gpu1TxtEnd { get; set; }
+        public String SensorIdGpu1 { get; set; }
+        public String SensorIdGpu1Temp { get; set; }
+        public String Gpu2Txt { get; set; }
+        public String Gpu2TxtEnd { get; set; }
+        public String SensorIdGpu2 { get; set; }
+        public String SensorIdGpu2Temp { get; set; }
+
+
+        private Dictionary<String,String> sensorNameToId = new Dictionary<String,String>();
+        private Dictionary<String, String> sensorIdToValue = new Dictionary<String, String>();
+        private List<String> sensorIds = new List<String>();
+
+
         public HWMonService()
         {
             InitializeComponent();
             LoadConfiguration();
+            InitComputerHardware();
         }
 
         private void LoadConfiguration()
@@ -42,15 +69,46 @@ namespace hwmonitor
             try
             {
                 ComPort = ConfigurationManager.AppSettings["ComPort"] ?? "COM1";
-                BaudRate = int.Parse(ConfigurationManager.AppSettings["BaudRate"] ?? "9600");
+                BaudRate = int.Parse(ConfigurationManager.AppSettings["BaudRate"] ?? "115200");
                 DataBits = int.Parse(ConfigurationManager.AppSettings["DataBits"] ?? "8");
-                MonitoringInterval = int.Parse(ConfigurationManager.AppSettings["MonitoringInterval"] ?? "1000");
+                MonitoringInterval = int.Parse(ConfigurationManager.AppSettings["MonitoringInterval"] ?? "500");
                 
                 string parityStr = ConfigurationManager.AppSettings["Parity"] ?? "None";
                 Parity = (Parity)Enum.Parse(typeof(Parity), parityStr, true);
                 
                 string stopBitsStr = ConfigurationManager.AppSettings["StopBits"] ?? "One";
                 StopBits = (StopBits)Enum.Parse(typeof(StopBits), stopBitsStr, true);
+
+                SensorIdCpu = ConfigurationManager.AppSettings["SensorIdCpu"];
+                SensorIdCpuTemp = ConfigurationManager.AppSettings["SensorIdCpuTemp"];
+                SensorIdMem = ConfigurationManager.AppSettings["SensorIdMem"];
+                SensorIdMemValue = ConfigurationManager.AppSettings["SensorIdMemValue"];
+                SensorIdGpu1 = ConfigurationManager.AppSettings["SensorIdGpu1"];
+                SensorIdGpu1Temp = ConfigurationManager.AppSettings["SensorIdGpu1Temp"];
+                SensorIdGpu2 = ConfigurationManager.AppSettings["SensorIdGpu2"];
+                SensorIdGpu2Temp = ConfigurationManager.AppSettings["SensorIdGpu2Temp"];
+
+                CpuTxt = ConfigurationManager.AppSettings["CpuTxt"];
+                MemTxt = ConfigurationManager.AppSettings["MemTxt"];
+                Gpu1Txt = ConfigurationManager.AppSettings["Gpu1Txt"];
+                Gpu2Txt = ConfigurationManager.AppSettings["Gpu2Txt"];
+
+                CpuTxtEnd = ConfigurationManager.AppSettings["CpuTxtEnd"];
+                MemTxtEnd = ConfigurationManager.AppSettings["MemTxtEnd"];
+                Gpu1TxtEnd = ConfigurationManager.AppSettings["Gpu1TxtEnd"];
+                Gpu2TxtEnd = ConfigurationManager.AppSettings["Gpu2TxtEnd"];
+
+                sensorNameToId.Add("SensorIdCpu", SensorIdCpu);
+                sensorNameToId.Add("SensorIdCpuTemp", SensorIdCpuTemp);
+                sensorNameToId.Add("SensorIdMem", SensorIdMem);
+                sensorNameToId.Add("SensorIdMemValue", SensorIdMemValue);
+                sensorNameToId.Add("SensorIdGpu1", SensorIdGpu1);
+                sensorNameToId.Add("SensorIdGpu1Temp", SensorIdGpu1Temp);
+                sensorNameToId.Add("SensorIdGpu2", SensorIdGpu2);
+                sensorNameToId.Add("SensorIdGpu2Temp", SensorIdGpu2Temp);
+
+                sensorIds.AddRange(sensorNameToId.Values);
+
             }
             catch (Exception ex)
             {
@@ -74,21 +132,6 @@ namespace hwmonitor
         {
             try
             {
-                // Initialize hardware monitoring
-                _computer = new Computer
-                {
-                    IsCpuEnabled = true,
-                    IsGpuEnabled = true,
-                    IsMemoryEnabled = false,
-                    IsMotherboardEnabled = false,
-                    IsControllerEnabled = false,
-                    IsNetworkEnabled = false,
-                    IsStorageEnabled = false
-                };
-                
-                _computer.Open();
-                _computer.Accept(new UpdateVisitor());
-                
                 // Initialize serial port
                 _serialPort = new SerialPort(ComPort, BaudRate, Parity, DataBits, StopBits);
                 _serialPort.ReadTimeout = 1000;
@@ -174,7 +217,7 @@ namespace hwmonitor
                     }
                     
                     // Sleep for a short period to avoid excessive CPU usage
-                    Thread.Sleep(100); // Sleep for 100ms
+                    Thread.Sleep(MonitoringInterval); // Sleep
                 }
                 catch (TimeoutException)
                 {
@@ -196,7 +239,51 @@ namespace hwmonitor
                     }
                     
                     // Wait a bit before retrying
-                    Thread.Sleep(MonitoringInterval);
+                    Thread.Sleep(3000);
+                }
+            }
+        }
+
+        public void InitComputerHardware()
+        {
+            // Initialize hardware monitoring
+            _computer = new Computer
+            {
+                IsCpuEnabled = true,
+                IsGpuEnabled = true,
+                IsMemoryEnabled = true,
+                IsMotherboardEnabled = false,
+                IsControllerEnabled = false,
+                IsNetworkEnabled = false,
+                IsStorageEnabled = false
+            };
+
+            _computer.Open();
+            _computer.Accept(new UpdateVisitor());
+        }
+
+        public void UpdateComputerHardware()
+        {
+            // Update hardware sensors
+            _computer.Accept(new UpdateVisitor());
+        }
+
+        private void walkHardwareSensors(IList<IHardware> hardlist, IList<String> searchSensors, IDictionary<String,String> result)
+        {
+            foreach (IHardware hardware in hardlist)
+            {
+                checkSensors(hardware, searchSensors, result);
+                walkHardwareSensors(hardware.SubHardware, searchSensors, result);
+            }
+        }
+
+        private void checkSensors(IHardware hardware, IList<String> searchSensors, IDictionary<String, String> result)
+        {
+            foreach (ISensor sensor in hardware.Sensors)
+            {
+                if (searchSensors.Contains(sensor.Identifier.ToString()))
+                {
+                    result.Add(sensor.Identifier.ToString(), $"{sensor.Value:000}");
                 }
             }
         }
@@ -208,53 +295,26 @@ namespace hwmonitor
                 
             try
             {
-                // Update hardware sensors
-                _computer.Accept(new UpdateVisitor());
-                
+                UpdateComputerHardware();                
+                sensorIdToValue.Clear();
+                walkHardwareSensors(_computer.Hardware, sensorIds, sensorIdToValue);
+
                 var hardwareData = new StringBuilder();
-                hardwareData.AppendLine($"HWMON:{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                
-                // Collect CPU data
-                foreach (var hardware in _computer.Hardware)
-                {
-                    if (hardware.HardwareType == HardwareType.Cpu)
-                    {
-                        foreach (var sensor in hardware.Sensors)
-                        {
-                            if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue)
-                            {
-                                hardwareData.AppendLine($"CPU_TEMP:{sensor.Name}:{sensor.Value.Value:F1}C");
-                            }
-                            else if (sensor.SensorType == SensorType.Load && sensor.Value.HasValue)
-                            {
-                                hardwareData.AppendLine($"CPU_LOAD:{sensor.Name}:{sensor.Value.Value:F1}%");
-                            }
-                        }
-                    }
-                    else if (hardware.HardwareType == HardwareType.GpuNvidia || 
-                             hardware.HardwareType == HardwareType.GpuAmd || 
-                             hardware.HardwareType == HardwareType.GpuIntel)
-                    {
-                        foreach (var sensor in hardware.Sensors)
-                        {
-                            if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue)
-                            {
-                                hardwareData.AppendLine($"GPU_TEMP:{sensor.Name}:{sensor.Value.Value:F1}C");
-                            }
-                            else if (sensor.SensorType == SensorType.Load && sensor.Value.HasValue)
-                            {
-                                hardwareData.AppendLine($"GPU_LOAD:{sensor.Name}:{sensor.Value.Value:F1}%");
-                            }
-                        }
-                    }
-                }
-                
-                hardwareData.AppendLine("END");
-                
+
+                hardwareData.AppendLine($"CPU:{sensorIdToValue[sensorNameToId["SensorIdCpu"]]}");
+                hardwareData.AppendLine($"MEM:{sensorIdToValue[sensorNameToId["SensorIdMem"]]}");
+                hardwareData.AppendLine($"GPU1:{sensorIdToValue[sensorNameToId["SensorIdGpu1"]]}");
+                hardwareData.AppendLine($"GPU2:{sensorIdToValue[sensorNameToId["SensorIdGpu2"]]}");
+
+                hardwareData.AppendLine($"CPUTXT:{CpuTxt}{sensorIdToValue[sensorNameToId["SensorIdCpuTemp"]].Substring(1)}{CpuTxtEnd}");
+                hardwareData.AppendLine($"MEMTXT:{MemTxt}{sensorIdToValue[sensorNameToId["SensorIdMemValue"]].Substring(1)}{MemTxtEnd}");
+                hardwareData.AppendLine($"GPU1TXT:{Gpu1Txt}{sensorIdToValue[sensorNameToId["SensorIdGpu1Temp"]].Substring(1)}{Gpu1TxtEnd}");
+                hardwareData.AppendLine($"GPU2TXT:{Gpu2Txt}{sensorIdToValue[sensorNameToId["SensorIdGpu2Temp"]].Substring(1)}{Gpu2TxtEnd}");
+
+                Console.WriteLine(hardwareData.ToString());
+
                 // Send data to COM port
                 SendToComPort(hardwareData.ToString());
-
-                Debug.WriteLine($"Hardware monitoring data collected and sent to {ComPort}");
             }
             catch (Exception ex)
             {
