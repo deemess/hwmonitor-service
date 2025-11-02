@@ -4,7 +4,7 @@
     <StartArguments>-sensors</StartArguments>
   </PropertyGroup>
   <PropertyGroup>
-    <PublishUrlHistory>publish\</PublishUrlHistory>
+    <PublishUrlHistory>publish\|d:\Work\Projects\.NET\hwmonitor\hwmonitor\publish\</PublishUrlHistory>
     <InstallUrlHistory />
     <SupportUrlHistory />
     <UpdateUrlHistory />
